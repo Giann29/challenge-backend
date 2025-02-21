@@ -1,5 +1,5 @@
 import amqp from "amqplib";
-import fs from "fs";
+import "dotenv/config";
 import path from "path";
 import ExcelJS from "exceljs";
 import { TaskRepository } from "../../../domain/interfaces/repositories/task-repository";
@@ -8,11 +8,14 @@ import { MongoDBTasksDataSource } from "../../data-sources/mongodb/mongodb-tasks
 import { TaskRepositoryImpl } from "../../../domain/repositories/task-repository";
 import { connectToDatabase } from "../../data-sources/mongodb/connection";
 
+const RABBITMQ_URI =
+  process.env.RABBITMQ_URI || "mongodb://localhost:27017/challenge";
+
 async function startWorker(taskRepository: TaskRepository) {
   try {
     await connectToDatabase();
 
-    const connection = await amqp.connect("amqp://localhost");
+    const connection = await amqp.connect(RABBITMQ_URI);
     const channel = await connection.createChannel();
     const queue = "file_processing";
 

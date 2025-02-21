@@ -1,10 +1,12 @@
-version: '3.8'
+version: "3.8"
 services:
   mongodb:
     image: mongo
     container_name: mongodb
     ports:
       - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -12,6 +14,31 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+
+  app:
+    build: .
+    container_name: app
+    ports:
+      - "3000:3000"
+    depends_on:
+      - mongodb
+      - rabbitmq
+    env_file:
+      - .env
+    volumes:
+      - ./uploads:/app/uploads
+
+  worker:
+    build: .
+    container_name: worker
+    command: ["/app/wait-for-rabbit.sh", "rabbitmq", "yarn", "start:worker"]
+    depends_on:
+      - mongodb
+      - rabbitmq
+    env_file:
+      - .env
+    volumes:
+      - ./uploads:/app/uploads
 
 volumes:
   mongodb_data:
