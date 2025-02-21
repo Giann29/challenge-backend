@@ -8,6 +8,7 @@ import { MongoDBTasksDataSource } from './data/data-sources/mongodb/mongodb-task
 import { TaskRepository } from './domain/interfaces/repositories/task-repository';
 import { UploadFile } from './domain/use-cases/upload-file';
 import { TaskRepositoryImpl } from './domain/repositories/task-repository';
+import { MongoDBDatabaseWrapper } from './data/data-sources/mongodb/mongodb-database-wrapper';
 
 export const app = express();
 const port = 3000;
@@ -19,26 +20,7 @@ async function initializeDependencies() {
   }
 
   // Set up the database wrapper (Mongoose in this case)
-  const databaseWrapper: DatabaseWrapper = {
-    find: async (query: object) => {
-      if (!mongoose.connection.db) {
-        throw new Error('Database connection is not ready.');
-      }
-      return mongoose.connection.db.collection('tasks').find(query).toArray();
-    },
-    findById: async (id: string) => {
-      if (!mongoose.connection.db) {
-        throw new Error('Database connection is not ready.');
-      }
-      return mongoose.connection.db.collection('tasks').findOne({ taskId: id });
-    },
-    insertOne: async (doc: any) => {
-      if (!mongoose.connection.db) {
-        throw new Error('Database connection is not ready.');
-      }
-      return mongoose.connection.db.collection('tasks').insertOne(doc);
-    },
-  };
+  const databaseWrapper = new MongoDBDatabaseWrapper();
 
   // Initialize the data source and repository
   const tasksDataSource = new MongoDBTasksDataSource(databaseWrapper);

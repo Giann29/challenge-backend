@@ -2,11 +2,10 @@ import { TasksDataSource } from "../../data/data-sources/interfaces/data-sources
 import { Task } from "../entities/task";
 import { TaskRepository } from "../interfaces/repositories/task-repository";
 
-export class TaskRepositoryImpl implements TaskRepository{
-
+export class TaskRepositoryImpl implements TaskRepository {
   tasksDataSource: TasksDataSource;
 
-  constructor(tasksDataSource: TasksDataSource){
+  constructor(tasksDataSource: TasksDataSource) {
     this.tasksDataSource = tasksDataSource;
   }
 
@@ -17,6 +16,10 @@ export class TaskRepositoryImpl implements TaskRepository{
 
   async findById(taskId: string): Promise<Task | null> {
     const result = await this.tasksDataSource.findById(taskId);
+    return result;
+  }
+  async update(taskId: string, task: Partial<Task>): Promise<boolean> {
+    const result = await this.tasksDataSource.update(taskId, task);
     return result;
   }
 }

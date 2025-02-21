@@ -31,6 +31,7 @@
   "scripts": {
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "start:worker": "ts-node src/data/messaging/rabbitmq/worker.ts"
   }
 }

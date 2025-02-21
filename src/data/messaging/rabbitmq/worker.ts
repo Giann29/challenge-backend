@@ -1,14 +1,20 @@
-import amqp from 'amqplib';
-import path from 'path';
-import ExcelJS from 'exceljs';
-import { TaskRepository } from '../../../domain/interfaces/repositories/task-repository';
-import { Error } from '../../../domain/entities/error';
+import amqp from "amqplib";
+import fs from "fs";
+import path from "path";
+import ExcelJS from "exceljs";
+import { TaskRepository } from "../../../domain/interfaces/repositories/task-repository";
+import { MongoDBDatabaseWrapper } from "../../data-sources/mongodb/mongodb-database-wrapper";
+import { MongoDBTasksDataSource } from "../../data-sources/mongodb/mongodb-tasks-data-source";
+import { TaskRepositoryImpl } from "../../../domain/repositories/task-repository";
+import { connectToDatabase } from "../../data-sources/mongodb/connection";
 
 async function startWorker(taskRepository: TaskRepository) {
   try {
-    const connection = await amqp.connect('amqp://localhost');
+    await connectToDatabase();
+
+    const connection = await amqp.connect("amqp://localhost");
     const channel = await connection.createChannel();
-    const queue = 'file_processing';
+    const queue = "file_processing";
 
     await channel.assertQueue(queue, { durable: true });
 
@@ -19,7 +25,9 @@ async function startWorker(taskRepository: TaskRepository) {
         const content = msg.content.toString();
         const { taskId, filePath } = JSON.parse(content);
 
-        console.log(`Received message for task ${taskId} with file path ${filePath}`);
+        console.log(
+          `Received message for task ${taskId} with file path ${filePath}`
+        );
 
         // Process the file
         await processFile(taskRepository, taskId, filePath);
@@ -29,16 +37,20 @@ async function startWorker(taskRepository: TaskRepository) {
       }
     });
   } catch (error) {
-    console.error('Error in worker:', error);
+    console.error("Error in worker:", error);
   }
 }
 
-async function processFile(taskRepository: TaskRepository, taskId: string, filePath: string) {
-  const fullPath = path.join(__dirname, '../../uploads', filePath);
+async function processFile(
+  taskRepository: TaskRepository,
+  taskId: string,
+  filePath: string
+) {
+  const fullPath = path.join(__dirname, "../../../../", filePath); // Ajusta la ruta aquí
   console.log(`Processing file at ${fullPath}`);
 
   const workbook = new ExcelJS.Workbook();
-  const errors: Error[] = [];
+  const errors: { row: number; col: number }[] = [];
 
   try {
     await workbook.xlsx.readFile(fullPath);
@@ -65,23 +77,31 @@ async function processFile(taskRepository: TaskRepository, taskId: string, fileP
     }
 
     // Update the task status and errors
-    task.status = 'done';
+    task.status = "done";
     task.errors = errors;
 
-    // Save the updated task
-    await taskRepository.save(task);
+    // Update the task status and errors
+    await taskRepository.update(taskId, { status: "done", errors });
 
     console.log(`File processing completed for task ${taskId}`);
   } catch (error) {
-    console.error('Error processing file:', error);
+    console.error("Error processing file:", error);
+
+    // Update the task status to indicate failure
+    await taskRepository.update(taskId, { status: "failed", errors: [] });
   }
 }
 
-function validateRow(nombre: string, edad: string, nums: string, rowNumber: number): Error[] {
-  const errors: Error[] = [];
+function validateRow(
+  nombre: string,
+  edad: string,
+  nums: string,
+  rowNumber: number
+): { row: number; col: number }[] {
+  const errors: { row: number; col: number }[] = [];
 
   // Validate Nombre (should be a non-empty string)
-  if (typeof nombre !== 'string' || nombre.trim() === '') {
+  if (typeof nombre !== "string" || nombre.trim() === "") {
     errors.push({ row: rowNumber, col: 1 });
   }
 
@@ -91,7 +111,7 @@ function validateRow(nombre: string, edad: string, nums: string, rowNumber: numb
   }
 
   // Validate Nums (should be a comma-separated list of numbers)
-  const numsArray = nums.split(',').map(Number);
+  const numsArray = nums.split(",").map(Number);
   if (numsArray.some(isNaN)) {
     errors.push({ row: rowNumber, col: 3 });
   }
@@ -99,6 +119,12 @@ function validateRow(nombre: string, edad: string, nums: string, rowNumber: numb
   return errors;
 }
 
-// Initialize the repository and start the worker
-const taskRepository = new TaskRepository(); // Replace with your actual repository implementation
+// Initialize the database wrapper
+const databaseWrapper = new MongoDBDatabaseWrapper();
+
+// Initialize the data source
+const tasksDataSource = new MongoDBTasksDataSource(databaseWrapper);
+
+// Initialize the repository
+const taskRepository = new TaskRepositoryImpl(tasksDataSource);
 startWorker(taskRepository);
