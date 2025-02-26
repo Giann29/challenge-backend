@@ -1,7 +1,7 @@
-import { DatabaseWrapper } from "../interfaces/data-sources/database-wrapper";
+import { TasksDatabaseWrapper } from "../interfaces/data-sources/tasks-database-wrapper";
 import { TaskModel } from "./models/task-model";
 
-export class MongoDBDatabaseWrapper implements DatabaseWrapper {
+export class MongoDBTasksDatabaseWrapper implements TasksDatabaseWrapper {
   async find(query: object): Promise<any[]> {
     return TaskModel.find(query).exec();
   }
@@ -17,6 +17,6 @@ export class MongoDBDatabaseWrapper implements DatabaseWrapper {
   }
   async updateOne(query: object, update: object): Promise<any> {
     const result = await TaskModel.updateOne(query, update);
-    return result.modifiedCount > 0; // Return true if the task was updated
+    return result.modifiedCount > 0;
   }
 }

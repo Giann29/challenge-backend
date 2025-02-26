@@ -1,10 +1,10 @@
 import { Task } from "../../../domain/entities/task";
-import { DatabaseWrapper } from "../interfaces/data-sources/database-wrapper";
+import { TasksDatabaseWrapper } from "../interfaces/data-sources/tasks-database-wrapper";
 import { TasksDataSource } from "../interfaces/data-sources/tasks-datasource";
 
 export class MongoDBTasksDataSource implements TasksDataSource {
-  private database: DatabaseWrapper;
-  constructor(database: DatabaseWrapper) {
+  private database: TasksDatabaseWrapper;
+  constructor(database: TasksDatabaseWrapper) {
     this.database = database;
   }
   async create(task: Task): Promise<boolean> {

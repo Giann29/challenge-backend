@@ -2,11 +2,11 @@ import request from "supertest";
 import { app } from "../../main";
 import { TaskRepositoryImpl } from "../../domain/repositories/task-repository";
 import { MongoDBTasksDataSource } from "../../data/data-sources/mongodb/mongodb-tasks-data-source";
-import { DatabaseWrapper } from "../../data/data-sources/interfaces/data-sources/database-wrapper";
+import { TasksDatabaseWrapper } from "../../data/data-sources/interfaces/data-sources/tasks-database-wrapper";
 import mongoose from "mongoose";
 import amqp from "amqplib";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import { MongoDBDatabaseWrapper } from "../../data/data-sources/mongodb/mongodb-database-wrapper";
+import { MongoDBTasksDatabaseWrapper } from "../../data/data-sources/mongodb/mongodb-tasks-database-wrapper";
 import fs from "fs/promises";
 
 describe("POST /upload", () => {
@@ -21,7 +21,7 @@ describe("POST /upload", () => {
     await mongoose.disconnect();
     await mongoose.connect(uri, {} as mongoose.ConnectOptions);
 
-    const databaseWrapper = new MongoDBDatabaseWrapper();
+    const databaseWrapper = new MongoDBTasksDatabaseWrapper();
     const tasksDataSource = new MongoDBTasksDataSource(databaseWrapper);
     taskRepository = new TaskRepositoryImpl(tasksDataSource);
 

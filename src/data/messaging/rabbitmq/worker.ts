@@ -3,15 +3,23 @@ import "dotenv/config";
 import path from "path";
 import ExcelJS from "exceljs";
 import { TaskRepository } from "../../../domain/interfaces/repositories/task-repository";
-import { MongoDBDatabaseWrapper } from "../../data-sources/mongodb/mongodb-database-wrapper";
 import { MongoDBTasksDataSource } from "../../data-sources/mongodb/mongodb-tasks-data-source";
 import { TaskRepositoryImpl } from "../../../domain/repositories/task-repository";
 import { connectToDatabase } from "../../data-sources/mongodb/connection";
+import { RowRepository } from "../../../domain/interfaces/repositories/row-repository";
+import { Row } from "../../../domain/entities/row";
+import { MongoDBTasksDatabaseWrapper } from "../../data-sources/mongodb/mongodb-tasks-database-wrapper";
+import { MongoDBRowsDatabaseWrapper } from "../../data-sources/mongodb/mongodb-rows-database-wrapper";
+import { MongoDBRowsDataSource } from "../../data-sources/mongodb/mongodb-rows-datasource";
+import { RowRepositoryImpl } from "../../../domain/repositories/row-repository";
 
 const RABBITMQ_URI =
   process.env.RABBITMQ_URI || "mongodb://localhost:27017/challenge";
 
-async function startWorker(taskRepository: TaskRepository) {
+async function startWorker(
+  taskRepository: TaskRepository,
+  rowsRepository: RowRepository
+) {
   try {
     await connectToDatabase();
 
@@ -33,7 +41,7 @@ async function startWorker(taskRepository: TaskRepository) {
         );
 
         // Process the file
-        await processFile(taskRepository, taskId, filePath);
+        await processFile(taskRepository, rowsRepository, taskId, filePath);
 
         // Acknowledge the message
         channel.ack(msg);
@@ -46,10 +54,11 @@ async function startWorker(taskRepository: TaskRepository) {
 
 async function processFile(
   taskRepository: TaskRepository,
+  rowRepository: RowRepository,
   taskId: string,
   filePath: string
 ) {
-  const fullPath = path.join(__dirname, "../../../../", filePath); // Ajusta la ruta aquí
+  const fullPath = path.join("/app", filePath); // Ajusta la ruta aquí
   console.log(`Processing file at ${fullPath}`);
 
   const workbook = new ExcelJS.Workbook();
@@ -70,6 +79,26 @@ async function processFile(
       const rowErrors = validateRow(nombre, edad, nums, rowNumber);
       if (rowErrors.length > 0) {
         errors.push(...rowErrors);
+      } else {
+        // Save valid data to Row
+        const age = parseInt(edad, 10);
+        if (isNaN(age)) {
+          console.error(`Invalid age value at row ${rowNumber}: ${edad}`);
+          errors.push({ row: rowNumber, col: 2 });
+        } else {
+          const row: Row = {
+            taskId,
+            name: nombre,
+            age: age,
+            nums: nums
+              .split(",")
+              .map(Number)
+              .sort((a, b) => a - b),
+          };
+          rowRepository.save(row).catch((error) => {
+            console.error("Error saving processed data:", error);
+          });
+        }
       }
     });
 
@@ -103,8 +132,12 @@ function validateRow(
 ): { row: number; col: number }[] {
   const errors: { row: number; col: number }[] = [];
 
-  // Validate Nombre (should be a non-empty string)
-  if (typeof nombre !== "string" || nombre.trim() === "") {
+  // Validate Nombre (should be a non-empty string and not a number)
+  if (
+    typeof nombre !== "string" ||
+    nombre.trim() === "" ||
+    !isNaN(Number(nombre))
+  ) {
     errors.push({ row: rowNumber, col: 1 });
   }
 
@@ -122,12 +155,21 @@ function validateRow(
   return errors;
 }
 
-// Initialize the database wrapper
-const databaseWrapper = new MongoDBDatabaseWrapper();
+// Initialize the tasks database wrapper
+const tasksDatabaseWrapper = new MongoDBTasksDatabaseWrapper();
 
-// Initialize the data source
-const tasksDataSource = new MongoDBTasksDataSource(databaseWrapper);
+// Initialize the rows database wrapper
+const rowsDatabaseWrapper = new MongoDBRowsDatabaseWrapper();
 
-// Initialize the repository
+// Initialize the tasks data source
+const tasksDataSource = new MongoDBTasksDataSource(tasksDatabaseWrapper);
+
+//Initialize the rows data source
+const rowsDataSource = new MongoDBRowsDataSource(rowsDatabaseWrapper);
+
+// Initialize the repositories
 const taskRepository = new TaskRepositoryImpl(tasksDataSource);
-startWorker(taskRepository);
+const rowRepository = new RowRepositoryImpl(rowsDataSource);
+
+// Start the worker
+startWorker(taskRepository, rowRepository);
