@@ -12,13 +12,18 @@ import { MongoDBTasksDatabaseWrapper } from "../../data-sources/mongodb/mongodb-
 import { MongoDBRowsDatabaseWrapper } from "../../data-sources/mongodb/mongodb-rows-database-wrapper";
 import { MongoDBRowsDataSource } from "../../data-sources/mongodb/mongodb-rows-datasource";
 import { RowRepositoryImpl } from "../../../domain/repositories/row-repository";
+import { MongoDBErrorsDataSource } from "../../data-sources/mongodb/mongodb-errors-datasource";
+import { MongoDBErrorsDatabaseWrapper } from "../../data-sources/mongodb/mongodb-errors-database-wrapper";
+import { ErrorRepositoryImpl } from "../../../domain/repositories/error-repository";
+import { ErrorRepository } from "../../../domain/interfaces/repositories/error-repository";
 
 const RABBITMQ_URI =
   process.env.RABBITMQ_URI || "mongodb://localhost:27017/challenge";
 
 async function startWorker(
   taskRepository: TaskRepository,
-  rowsRepository: RowRepository
+  rowsRepository: RowRepository,
+  errorsRepository: ErrorRepository
 ) {
   try {
     await connectToDatabase();
@@ -41,7 +46,13 @@ async function startWorker(
         );
 
         // Process the file
-        await processFile(taskRepository, rowsRepository, taskId, filePath);
+        await processFile(
+          taskRepository,
+          rowsRepository,
+          errorsRepository,
+          taskId,
+          filePath
+        );
 
         // Acknowledge the message
         channel.ack(msg);
@@ -55,6 +66,7 @@ async function startWorker(
 async function processFile(
   taskRepository: TaskRepository,
   rowRepository: RowRepository,
+  errorsRepository: ErrorRepository,
   taskId: string,
   filePath: string
 ) {
@@ -68,9 +80,8 @@ async function processFile(
     await workbook.xlsx.readFile(fullPath);
     const worksheet = workbook.worksheets[0];
 
-    worksheet.eachRow((row, rowNumber) => {
-      if (rowNumber === 1) return; // Skip the header row
-
+    for (const row of worksheet.getRows(2, worksheet.rowCount - 1) || []) {
+      const rowNumber = row.number;
       const nombre = row.getCell(1).text;
       const edad = row.getCell(2).text;
       const nums = row.getCell(3).text;
@@ -79,12 +90,20 @@ async function processFile(
       const rowErrors = validateRow(nombre, edad, nums, rowNumber);
       if (rowErrors.length > 0) {
         errors.push(...rowErrors);
+        for (const error of rowErrors) {
+          await errorsRepository.save({
+            taskId,
+            row: error.row,
+            col: error.col,
+          });
+        }
       } else {
         // Save valid data to Row
         const age = parseInt(edad, 10);
         if (isNaN(age)) {
           console.error(`Invalid age value at row ${rowNumber}: ${edad}`);
           errors.push({ row: rowNumber, col: 2 });
+          await errorsRepository.save({ taskId, row: rowNumber, col: 2 });
         } else {
           const row: Row = {
             taskId,
@@ -95,12 +114,12 @@ async function processFile(
               .map(Number)
               .sort((a, b) => a - b),
           };
-          rowRepository.save(row).catch((error) => {
+          await rowRepository.save(row).catch((error) => {
             console.error("Error saving processed data:", error);
           });
         }
       }
-    });
+    }
 
     // Find the task by ID
     const task = await taskRepository.findById(taskId);
@@ -108,19 +127,18 @@ async function processFile(
       throw new Error(`Task with ID ${taskId} not found.`);
     }
 
-    // Update the task status and errors
+    // Update the task status
     task.status = "done";
-    task.errors = errors;
 
-    // Update the task status and errors
-    await taskRepository.update(taskId, { status: "done", errors });
+    // Update the task status
+    await taskRepository.update(taskId, { status: "done" });
 
     console.log(`File processing completed for task ${taskId}`);
   } catch (error) {
     console.error("Error processing file:", error);
 
     // Update the task status to indicate failure
-    await taskRepository.update(taskId, { status: "failed", errors: [] });
+    await taskRepository.update(taskId, { status: "failed" });
   }
 }
 
@@ -161,15 +179,22 @@ const tasksDatabaseWrapper = new MongoDBTasksDatabaseWrapper();
 // Initialize the rows database wrapper
 const rowsDatabaseWrapper = new MongoDBRowsDatabaseWrapper();
 
+//Initialize the errors database wrapper
+const errorsDatabaseWrapper = new MongoDBErrorsDatabaseWrapper();
+
 // Initialize the tasks data source
 const tasksDataSource = new MongoDBTasksDataSource(tasksDatabaseWrapper);
 
-//Initialize the rows data source
+//Initialize the errors data source
+const errorsDataSource = new MongoDBErrorsDataSource(errorsDatabaseWrapper);
+
+// Initialize the rows data source
 const rowsDataSource = new MongoDBRowsDataSource(rowsDatabaseWrapper);
 
 // Initialize the repositories
 const taskRepository = new TaskRepositoryImpl(tasksDataSource);
 const rowRepository = new RowRepositoryImpl(rowsDataSource);
+const errorRepository = new ErrorRepositoryImpl(errorsDataSource);
 
 // Start the worker
-startWorker(taskRepository, rowRepository);
+startWorker(taskRepository, rowRepository, errorRepository);
