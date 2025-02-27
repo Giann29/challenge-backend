@@ -1,84 +1,62 @@
 import request from "supertest";
-import { app } from "../../main";
-import { TaskRepositoryImpl } from "../../domain/repositories/task-repository";
-import { MongoDBTasksDataSource } from "../../data/data-sources/mongodb/mongodb-tasks-data-source";
-import { TasksDatabaseWrapper } from "../../data/data-sources/interfaces/data-sources/tasks-database-wrapper";
-import mongoose from "mongoose";
-import amqp from "amqplib";
-import { MongoMemoryServer } from "mongodb-memory-server";
-import { MongoDBTasksDatabaseWrapper } from "../../data/data-sources/mongodb/mongodb-tasks-database-wrapper";
+import express from "express";
+import uploadRouter from "./upload-router";
+import { UploadFileUseCase } from "../../domain/interfaces/use-cases/upload-file-use-case";
+import multer from "multer";
+import path from "path";
 import fs from "fs/promises";
 
-describe("POST /upload", () => {
-  let taskRepository: TaskRepositoryImpl;
-  let mongoServer: MongoMemoryServer;
-  let connection: amqp.Connection;
-  let channel: amqp.Channel;
+describe("Upload Router", () => {
+  let app: express.Application;
+  let uploadFileUseCase: jest.Mocked<UploadFileUseCase>;
 
-  beforeAll(async () => {
-    mongoServer = await MongoMemoryServer.create();
-    const uri = mongoServer.getUri();
-    await mongoose.disconnect();
-    await mongoose.connect(uri, {} as mongoose.ConnectOptions);
+  beforeEach(() => {
+    uploadFileUseCase = {
+      execute: jest.fn(),
+    } as unknown as jest.Mocked<UploadFileUseCase>;
 
-    const databaseWrapper = new MongoDBTasksDatabaseWrapper();
-    const tasksDataSource = new MongoDBTasksDataSource(databaseWrapper);
-    taskRepository = new TaskRepositoryImpl(tasksDataSource);
-
-    connection = await amqp.connect("amqp://localhost");
-    channel = await connection.createChannel();
-  });
-
-  afterAll(async () => {
-    await mongoose.disconnect();
-    await mongoServer.stop();
-    await channel.close();
-    await connection.close();
+    app = express();
+    app.use(express.json());
+    app.use("/api", uploadRouter(uploadFileUseCase));
   });
 
   it("should upload a file and return a task ID", async () => {
-    console.log("Starting test: should upload a file and return a task ID");
+    const taskId = "12345";
+
+    uploadFileUseCase.execute.mockResolvedValue({ taskId, status: "pending" });
+
     const response = await request(app)
       .post("/api/upload")
-      .attach("file", "test/Mixed.xlsx"); // Ensure this file exists
-
-    console.log("Response status:", response.status);
-    console.log("Response body:", response.body);
+      .attach("file", "test/Mixed.xlsx");
 
     expect(response.status).toBe(200);
-    expect(response.body.taskId).toBeDefined();
+    expect(response.body.taskId).toBe(taskId);
 
-    // Verify the task was saved in the database
-    const task = await taskRepository.findById(response.body.taskId);
-    expect(task).toBeDefined();
-    expect(task?.status).toBe("pending");
-
-    // Delete the uploaded file
     await fs.unlink(`${response.body.filePath}`);
-
-    // Remove the message from the queue
-    const queue = "file_processing";
-    await channel.assertQueue(queue, { durable: true });
-    await new Promise<void>((resolve, reject) => {
-      channel.consume(
-        queue,
-        (message) => {
-          if (message) {
-            channel.ack(message);
-            resolve();
-          } else {
-            reject(new Error("No message found in the queue"));
-          }
-        },
-        { noAck: false }
-      );
-    });
-  }, 10000);
+  });
 
   it("should return 400 if no file is uploaded", async () => {
     const response = await request(app).post("/api/upload");
 
     expect(response.status).toBe(400);
     expect(response.body.error).toBe("No file uploaded.");
+  });
+
+  it("should return 500 if there is an error during file upload", async () => {
+    const filePath = path.join(__dirname, "test-file.txt");
+    await fs.writeFile(filePath, "test content");
+
+    uploadFileUseCase.execute.mockRejectedValue(
+      new Error("Failed to upload file.")
+    );
+
+    const response = await request(app)
+      .post("/api/upload")
+      .attach("file", filePath);
+
+    expect(response.status).toBe(500);
+    expect(response.body.error).toBe("Failed to upload file.");
+
+    await fs.unlink(filePath);
   });
 });

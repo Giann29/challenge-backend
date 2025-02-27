@@ -18,7 +18,7 @@ describe("TaskRepositoryImpl", () => {
 
   describe("save", () => {
     it("should save a task and return true", async () => {
-      const task: Task = { taskId: "1", status: "pending", errors: [] };
+      const task: Task = { taskId: "1", status: "pending" };
       tasksDataSource.create.mockResolvedValue(true);
 
       const result = await taskRepository.save(task);
@@ -30,7 +30,7 @@ describe("TaskRepositoryImpl", () => {
 
   describe("findById", () => {
     it("should find a task by taskId and return it", async () => {
-      const task: Task = { taskId: "1", status: "pending", errors: [] };
+      const task: Task = { taskId: "1", status: "pending" };
       tasksDataSource.findById.mockResolvedValue(task);
 
       const result = await taskRepository.findById("1");
