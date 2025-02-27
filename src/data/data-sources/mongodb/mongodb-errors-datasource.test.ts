@@ -19,7 +19,6 @@ describe("MongoDBErrorsDataSource", () => {
 
   describe("create", () => {
     it("should return true if error is created successfully", async () => {
-      // Simula una respuesta exitosa del método insertOne
       databaseWrapper.insertOne.mockResolvedValue({ insertedId: "abc123" });
       const sampleError: DomainError = { taskId: "123", row: 1, col: 2 };
 
@@ -71,7 +70,6 @@ describe("MongoDBErrorsDataSource", () => {
       const limit = 10;
       const error = new Error("Find failed");
 
-      // Aquí simulamos que countErrorsByTaskId falla. También podrías simular en findByTaskId.
       databaseWrapper.countErrorsByTaskId.mockRejectedValue(error);
 
       await expect(

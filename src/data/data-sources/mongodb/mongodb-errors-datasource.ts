@@ -1,8 +1,6 @@
-//// filepath: /home/gianni-fornasari/dev/challenge-backend/src/data/data-sources/mongodb/mongodb-errors-datasource.ts
 import { Error } from "../../../domain/entities/error";
 import { ErrorDatabaseWrapper } from "../interfaces/data-sources/errors-database-wrapper";
 import { ErrorsDataSource } from "../interfaces/data-sources/errors-datasource";
-import { ErrorModel } from "./models/error-model";
 import { QueryExecutionException } from "../../../domain/exceptions/database-exception";
 
 export class MongoDBErrorsDataSource implements ErrorsDataSource {
