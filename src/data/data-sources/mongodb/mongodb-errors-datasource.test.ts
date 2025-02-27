@@ -1,10 +1,11 @@
 import { MongoDBErrorsDataSource } from "./mongodb-errors-datasource";
 import { ErrorDatabaseWrapper } from "../interfaces/data-sources/errors-database-wrapper";
-import { Error } from "../../../domain/entities/error";
+import { QueryExecutionException } from "../../../domain/exceptions/database-exception";
+import { Error as DomainError } from "../../../domain/entities/error";
 
 describe("MongoDBErrorsDataSource", () => {
-  let errorsDataSource: MongoDBErrorsDataSource;
   let databaseWrapper: jest.Mocked<ErrorDatabaseWrapper>;
+  let errorsDataSource: MongoDBErrorsDataSource;
 
   beforeEach(() => {
     databaseWrapper = {
@@ -17,40 +18,70 @@ describe("MongoDBErrorsDataSource", () => {
   });
 
   describe("create", () => {
-    it("should create an error and return true", async () => {
-      const error: Error = { taskId: "1", row: 1, col: 2 };
-      databaseWrapper.insertOne.mockResolvedValue({ insertedId: "1" });
+    it("should return true if error is created successfully", async () => {
+      // Simula una respuesta exitosa del método insertOne
+      databaseWrapper.insertOne.mockResolvedValue({ insertedId: "abc123" });
+      const sampleError: DomainError = { taskId: "123", row: 1, col: 2 };
 
-      const result = await errorsDataSource.create(error);
+      const result = await errorsDataSource.create(sampleError);
 
       expect(result).toBe(true);
-      expect(databaseWrapper.insertOne).toHaveBeenCalledWith(error);
+      expect(databaseWrapper.insertOne).toHaveBeenCalledWith(sampleError);
     });
 
-    it("should return false if creating an error fails", async () => {
-      const error: Error = { taskId: "1", row: 1, col: 2 };
-      databaseWrapper.insertOne.mockResolvedValue(null);
+    it("should throw QueryExecutionException on error during creation", async () => {
+      const sampleError: DomainError = { taskId: "123", row: 1, col: 2 };
+      const error = new Error("Insertion error");
+      databaseWrapper.insertOne.mockRejectedValue(error);
 
-      const result = await errorsDataSource.create(error);
-
-      expect(result).toBe(false);
-      expect(databaseWrapper.insertOne).toHaveBeenCalledWith(error);
+      await expect(errorsDataSource.create(sampleError)).rejects.toThrow(
+        QueryExecutionException
+      );
+      await expect(errorsDataSource.create(sampleError)).rejects.toThrow(
+        "MongoDBErrorsDataSource.create"
+      );
     });
   });
 
   describe("findByTaskId", () => {
-    it("should return errors and total count for a given taskId", async () => {
-      const taskId = "1";
-      const errors: Error[] = [{ taskId, row: 1, col: 2 }];
-      const total = errors.length;
+    it("should return errors and total when found", async () => {
+      const taskId = "123";
+      const page = 1;
+      const limit = 10;
+      const errorsArray: DomainError[] = [{ taskId, row: 1, col: 2 }];
+      const total = 5;
+
       databaseWrapper.countErrorsByTaskId.mockResolvedValue(total);
-      databaseWrapper.findByTaskId.mockResolvedValue(errors);
+      databaseWrapper.findByTaskId.mockResolvedValue(errorsArray);
 
-      const result = await errorsDataSource.findByTaskId(taskId, 1, 10);
+      const result = await errorsDataSource.findByTaskId(taskId, page, limit);
 
-      expect(result).toEqual({ errors, total });
+      expect(result).toEqual({ errors: errorsArray, total });
       expect(databaseWrapper.countErrorsByTaskId).toHaveBeenCalledWith(taskId);
-      expect(databaseWrapper.findByTaskId).toHaveBeenCalledWith(taskId, 1, 10);
+      expect(databaseWrapper.findByTaskId).toHaveBeenCalledWith(
+        taskId,
+        page,
+        limit
+      );
+    });
+
+    it("should throw QueryExecutionException on error during findByTaskId", async () => {
+      const taskId = "123";
+      const page = 1;
+      const limit = 10;
+      const error = new Error("Find failed");
+
+      // Aquí simulamos que countErrorsByTaskId falla. También podrías simular en findByTaskId.
+      databaseWrapper.countErrorsByTaskId.mockRejectedValue(error);
+
+      await expect(
+        errorsDataSource.findByTaskId(taskId, page, limit)
+      ).rejects.toThrow(QueryExecutionException);
+      await expect(
+        errorsDataSource.findByTaskId(taskId, page, limit)
+      ).rejects.toThrow(
+        `MongoDBErrorsDataSource.findByTaskId [taskId: ${taskId}]`
+      );
     });
   });
 });

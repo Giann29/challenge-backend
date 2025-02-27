@@ -1,4 +1,5 @@
 import express from "express";
+import { checkPermissions } from "../../middleware/check-permissions"; // Import the permission middleware
 import { GetTaskStatus } from "../../domain/interfaces/use-cases/get-task-status";
 import { GetTaskErrors } from "../../domain/interfaces/use-cases/get-task-errors";
 import { GetTaskData } from "../../domain/interfaces/use-cases/get-task-data";
@@ -10,7 +11,7 @@ export default function TasksRouter(
 ) {
   const router = express.Router();
 
-  router.get("/status/:taskId", async (req, res) => {
+  router.get("/status/:taskId", checkPermissions, async (req, res, next) => {
     const { taskId } = req.params;
     try {
       const task = await getStatusUseCase.execute(taskId);
@@ -20,26 +21,26 @@ export default function TasksRouter(
         hasErrors: task.hasErrors,
       }); // Send the response
     } catch (error) {
-      res.status(500).json({ error: "Failed to get the task status." }); // Send the response
+      next(error);
     }
   });
 
-  router.get("/data/:taskId", async (req, res) => {
+  router.get("/data/:taskId", checkPermissions, async (req, res, next) => {
     const { taskId } = req.params;
     const { page = 1, limit = 10 } = req.query; // Default values for page and limit
     try {
-      const errors = await getTaskData.execute(
+      const data = await getTaskData.execute(
         taskId,
         Number(page),
         Number(limit)
       );
-      res.json(errors);
+      res.json(data);
     } catch (error) {
-      res.status(500).json({ error: "Failed to get the task data." }); // Send the response
+      next(error);
     }
   });
 
-  router.get("/errors/:taskId", async (req, res) => {
+  router.get("/errors/:taskId", checkPermissions, async (req, res, next) => {
     const { taskId } = req.params;
     const { page = 1, limit = 10 } = req.query; // Default values for page and limit
     try {
@@ -50,7 +51,7 @@ export default function TasksRouter(
       );
       res.json(errors);
     } catch (error) {
-      res.status(500).json({ error: "Failed to get the task errors." }); // Send the response
+      next(error);
     }
   });
 

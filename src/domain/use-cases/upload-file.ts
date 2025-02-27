@@ -2,6 +2,7 @@ import { TaskRepository } from "../interfaces/repositories/task-repository";
 import { Task } from "../entities/task";
 import { enqueueTask } from "../../data/messaging/rabbitmq";
 import { generateTaskId } from "../../shared/utils/generateTaskId";
+import { TaskSaveException } from "../exceptions/database-exception";
 
 export class UploadFile {
   constructor(private taskRepository: TaskRepository) {}
@@ -12,7 +13,7 @@ export class UploadFile {
 
     const saved = await this.taskRepository.save(task);
     if (!saved) {
-      throw new Error("Failed to save the task.");
+      throw new TaskSaveException();
     }
 
     await enqueueTask(taskId, filePath);

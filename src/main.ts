@@ -17,6 +17,8 @@ import { MongoDBRowsDatabaseWrapper } from "./data/data-sources/mongodb/mongodb-
 import { MongoDBRowsDataSource } from "./data/data-sources/mongodb/mongodb-rows-datasource";
 import { RowRepositoryImpl } from "./domain/repositories/row-repository";
 import { GetTaskDataImpl } from "./domain/use-cases/get-task-data";
+import { errorHandler, notFoundHandler } from "./middleware/error-handler";
+import { checkPermissions } from "./middleware/check-permissions";
 
 export const app = express();
 const port = 3000;
@@ -47,12 +49,27 @@ async function initializeDependencies() {
   const getTaskErrorsUseCase = new GetTaskErrorsImpl(errorsRepository);
   const getTaskDataUseCase = new GetTaskDataImpl(rowRepository);
 
-  // Attach the task router
+  app.use(express.json());
+
   app.use("/api", uploadRouter(uploadFileUseCase));
   app.use(
     "/api/tasks",
     tasksRouter(getStatusUseCase, getTaskErrorsUseCase, getTaskDataUseCase)
   );
+
+  app.use("*", notFoundHandler);
+
+  app.use(
+    (
+      err: any,
+      req: express.Request,
+      res: express.Response,
+      next: express.NextFunction
+    ) => {
+      errorHandler(err, req, res, next);
+    }
+  );
+  app.use(checkPermissions);
 }
 
 // Start the server

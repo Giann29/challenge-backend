@@ -16,6 +16,7 @@ import { MongoDBErrorsDataSource } from "../../data-sources/mongodb/mongodb-erro
 import { MongoDBErrorsDatabaseWrapper } from "../../data-sources/mongodb/mongodb-errors-database-wrapper";
 import { ErrorRepositoryImpl } from "../../../domain/repositories/error-repository";
 import { ErrorRepository } from "../../../domain/interfaces/repositories/error-repository";
+import { TaskNotFoundException } from "../../../domain/exceptions/not-found-exception";
 
 const RABBITMQ_URI =
   process.env.RABBITMQ_URI || "mongodb://localhost:27017/challenge";
@@ -124,7 +125,7 @@ async function processFile(
     // Find the task by ID
     const task = await taskRepository.findById(taskId);
     if (!task) {
-      throw new Error(`Task with ID ${taskId} not found.`);
+      throw new TaskNotFoundException(`Task with ID ${taskId} not found.`);
     }
 
     // Update the task status

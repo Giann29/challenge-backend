@@ -1,7 +1,7 @@
 import { Row } from "../../../domain/entities/row";
 import { RowDatabaseWrapper } from "../interfaces/data-sources/row-database-wrapper";
 import { RowModel } from "./models/row-model";
-import { TaskModel } from "./models/task-model";
+import { QueryExecutionException } from "../../../domain/exceptions/database-exception";
 
 export class MongoDBRowsDatabaseWrapper implements RowDatabaseWrapper {
   async findByTaskId(
@@ -9,13 +9,24 @@ export class MongoDBRowsDatabaseWrapper implements RowDatabaseWrapper {
     page: number,
     limit: number
   ): Promise<Row[] | null> {
-    const skip = (page - 1) * limit;
-    return RowModel.find({ taskId }).skip(skip).limit(limit).exec();
+    try {
+      const skip = (page - 1) * limit;
+      return await RowModel.find({ taskId }).skip(skip).limit(limit).exec();
+    } catch (err) {
+      throw new QueryExecutionException(
+        err as globalThis.Error,
+        `findByTaskId: ${taskId}`
+      );
+    }
   }
 
   async insertOne(doc: any): Promise<any> {
-    const row = new RowModel(doc);
-    await row.save();
-    return { insertedId: row._id };
+    try {
+      const row = new RowModel(doc);
+      await row.save();
+      return { insertedId: row._id };
+    } catch (err) {
+      throw new QueryExecutionException(err as globalThis.Error, "insertOne");
+    }
   }
 }

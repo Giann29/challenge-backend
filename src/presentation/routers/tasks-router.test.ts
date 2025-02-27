@@ -1,144 +1,204 @@
-import request from "supertest";
 import express from "express";
+import request from "supertest";
 import TasksRouter from "./tasks-router";
 import { GetTaskStatus } from "../../domain/interfaces/use-cases/get-task-status";
 import { GetTaskErrors } from "../../domain/interfaces/use-cases/get-task-errors";
 import { GetTaskData } from "../../domain/interfaces/use-cases/get-task-data";
-import { MongoMemoryServer } from "mongodb-memory-server";
-import mongoose from "mongoose";
+import { Task } from "../../domain/entities/task";
+import { Row } from "../../domain/entities/row";
+import { Error as TaskError } from "../../domain/entities/error";
+import {
+  TaskNotFoundException,
+  TaskDataNotFoundException,
+  TaskErrorsNotFoundException,
+} from "../../domain/exceptions/not-found-exception";
+import { errorHandler } from "../../middleware/error-handler";
 
 describe("Tasks Router", () => {
   let app: express.Application;
-  let getStatusUseCase: GetTaskStatus;
-  let getTaskErrors: GetTaskErrors;
-  let getTaskData: GetTaskData;
-  let mongoServer: MongoMemoryServer;
+  let getStatusUseCase: jest.Mocked<GetTaskStatus>;
+  let getTaskErrors: jest.Mocked<GetTaskErrors>;
+  let getTaskData: jest.Mocked<GetTaskData>;
+  let consoleErrorSpy: jest.SpyInstance;
 
-  beforeEach(async () => {
+  beforeEach(() => {
+    consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
     getStatusUseCase = {
       execute: jest.fn(),
-    } as unknown as GetTaskStatus;
-
+    } as unknown as jest.Mocked<GetTaskStatus>;
     getTaskErrors = {
       execute: jest.fn(),
-    } as unknown as GetTaskErrors;
+    } as unknown as jest.Mocked<GetTaskErrors>;
+    getTaskData = { execute: jest.fn() } as unknown as jest.Mocked<GetTaskData>;
 
-    getTaskData = {
-      execute: jest.fn(),
-    } as unknown as GetTaskData;
-
-    mongoServer = await MongoMemoryServer.create();
-    const uri = mongoServer.getUri();
-    await mongoose.disconnect();
-    await mongoose.connect(uri, {} as mongoose.ConnectOptions);
     app = express();
+    // Simulate the permissions middleware
+    app.use((req, res, next) => {
+      req.user = { permissions: ["READ_TASKS", "UPLOAD_FILES"] };
+      next();
+    });
     app.use(express.json());
     app.use(
       "/api/tasks",
       TasksRouter(getStatusUseCase, getTaskErrors, getTaskData)
     );
+    // Errors middleware
+    app.use(
+      (
+        err: any,
+        req: express.Request,
+        res: express.Response,
+        next: express.NextFunction
+      ) => {
+        errorHandler(err, req, res, next);
+      }
+    );
   });
-
-  afterEach(async () => {
-    await mongoose.disconnect();
-    await mongoServer.stop();
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
   });
 
   describe("GET /api/tasks/status/:taskId", () => {
-    it("should return the task status", async () => {
-      const taskId = "ab03adf8-1b62-4d06-bcc6-636183a3cc58";
-      const task = { taskId, status: "done", hasErrors: false };
-      (getStatusUseCase.execute as jest.Mock).mockResolvedValue(task);
+    it("should return the task status with proper data", async () => {
+      const task: Task = { taskId: "123", status: "done", hasErrors: false };
+      getStatusUseCase.execute.mockResolvedValue(task);
+
+      const response = await request(app).get("/api/tasks/status/123");
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        taskId: "123",
+        status: "done",
+        hasErrors: false,
+      });
+      expect(getStatusUseCase.execute).toHaveBeenCalledWith("123");
+    });
+
+    it("should return 404 if task is not found", async () => {
+      const taskId = "404";
+      getStatusUseCase.execute.mockRejectedValue(
+        new TaskNotFoundException(taskId)
+      );
 
       const response = await request(app).get(`/api/tasks/status/${taskId}`);
 
-      expect(response.status).toBe(200);
+      expect(response.status).toBe(404);
       expect(response.body).toEqual({
-        taskId: task.taskId,
-        status: task.status,
-        hasErrors: task.hasErrors,
-      });
-      expect(getStatusUseCase.execute).toHaveBeenCalledWith(taskId);
-    });
-
-    it("should return 500 if there is an error", async () => {
-      const taskId = "ab03adf8-1b62-4d06-bcc6-636183a3cc58";
-      (getStatusUseCase.execute as jest.Mock).mockRejectedValue(
-        new Error("Failed to get the task status.")
-      );
-
-      const response = await request(app).get(`/api/tasks/status/${taskId}`);
-
-      expect(response.status).toBe(500);
-      expect(response.body).toEqual({
-        error: "Failed to get the task status.",
+        status: "error",
+        code: "TASK_NOT_FOUND",
+        message: `Task not found with id: ${taskId}`,
+        path: `/api/tasks/status/${taskId}`,
+        timestamp: expect.any(String),
       });
     });
-  });
 
-  describe("GET /api/tasks/errors/:taskId", () => {
-    it("should return the task errors", async () => {
-      const taskId = "ab03adf8-1b62-4d06-bcc6-636183a3cc58";
-      const errors = { errors: [{ row: 1, col: 2 }], total: 1 };
-      (getTaskErrors.execute as jest.Mock).mockResolvedValue(errors);
-
-      const response = await request(app).get(
-        `/api/tasks/errors/${taskId}?page=1&limit=10`
+    it("should return 403 if permissions are missing", async () => {
+      // Creates a new instance of the app without the permissions
+      const appNoPermissions = express();
+      appNoPermissions.use((req, res, next) => {
+        req.user = { permissions: [] };
+        next();
+      });
+      appNoPermissions.use(express.json());
+      appNoPermissions.use(
+        "/api/tasks",
+        TasksRouter(getStatusUseCase, getTaskErrors, getTaskData)
+      );
+      appNoPermissions.use(
+        (
+          err: any,
+          req: express.Request,
+          res: express.Response,
+          next: express.NextFunction
+        ) => {
+          errorHandler(err, req, res, next);
+        }
       );
 
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual(errors);
-      expect(getTaskErrors.execute).toHaveBeenCalledWith(taskId, 1, 10);
-    });
-
-    it("should return 500 if there is an error", async () => {
-      const taskId = "ab03adf8-1b62-4d06-bcc6-636183a3cc58";
-      (getTaskErrors.execute as jest.Mock).mockRejectedValue(
-        new Error("Failed to get the task errors.")
+      const response = await request(appNoPermissions).get(
+        "/api/tasks/status/123"
       );
 
-      const response = await request(app).get(
-        `/api/tasks/errors/${taskId}?page=1&limit=10`
-      );
-
-      expect(response.status).toBe(500);
+      expect(response.status).toBe(403);
       expect(response.body).toEqual({
-        error: "Failed to get the task errors.",
+        error: "Forbidden: You do not have permission to access this resource.",
       });
     });
   });
 
   describe("GET /api/tasks/data/:taskId", () => {
     it("should return the task data", async () => {
-      const taskId = "ab03adf8-1b62-4d06-bcc6-636183a3cc58";
-      const data = {
-        rows: [{ taskId, name: "John Doe", age: 30, nums: [1, 2, 3] }],
-        total: 1,
-      };
-      (getTaskData.execute as jest.Mock).mockResolvedValue(data);
+      const rows: Row[] = [
+        { taskId: "123", name: "John", age: 30, nums: [1, 2, 3] },
+        { taskId: "123", name: "Jane", age: 25, nums: [4, 5, 6] },
+      ];
+      getTaskData.execute.mockResolvedValue(rows);
 
       const response = await request(app).get(
-        `/api/tasks/data/${taskId}?page=1&limit=10`
+        "/api/tasks/data/123?page=1&limit=10"
       );
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual(data);
-      expect(getTaskData.execute).toHaveBeenCalledWith(taskId, 1, 10);
+      expect(response.body).toEqual(rows);
+      expect(getTaskData.execute).toHaveBeenCalledWith("123", 1, 10);
     });
 
-    it("should return 500 if there is an error", async () => {
-      const taskId = "ab03adf8-1b62-4d06-bcc6-636183a3cc58";
-      (getTaskData.execute as jest.Mock).mockRejectedValue(
-        new Error("Failed to get the task data.")
+    it("should return 404 if no task data is found", async () => {
+      const taskId = "404";
+      getTaskData.execute.mockRejectedValue(
+        new TaskDataNotFoundException(taskId)
       );
 
       const response = await request(app).get(
         `/api/tasks/data/${taskId}?page=1&limit=10`
       );
 
-      expect(response.status).toBe(500);
+      expect(response.status).toBe(404);
       expect(response.body).toEqual({
-        error: "Failed to get the task data.",
+        status: "error",
+        code: "TASK_DATA_NOT_FOUND",
+        message: `Data not found for task id: ${taskId}`,
+        path: `/api/tasks/data/${taskId}`,
+        timestamp: expect.any(String),
+      });
+    });
+  });
+
+  describe("GET /api/tasks/errors/:taskId", () => {
+    it("should return the task errors", async () => {
+      const errorsResult = {
+        errors: [{ taskId: "123", row: 1, col: 2 } as TaskError],
+        total: 1,
+      };
+      getTaskErrors.execute.mockResolvedValue(errorsResult);
+
+      const response = await request(app).get(
+        "/api/tasks/errors/123?page=1&limit=10"
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(errorsResult);
+      expect(getTaskErrors.execute).toHaveBeenCalledWith("123", 1, 10);
+    });
+
+    it("should return 404 if no task errors are found", async () => {
+      const taskId = "404";
+      getTaskErrors.execute.mockRejectedValue(
+        new TaskErrorsNotFoundException(taskId)
+      );
+
+      const response = await request(app).get(
+        `/api/tasks/errors/${taskId}?page=1&limit=10`
+      );
+
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({
+        status: "error",
+        code: "TASK_ERRORS_NOT_FOUND",
+        message: `Errors not found for task id: ${taskId}`,
+        path: `/api/tasks/errors/${taskId}`,
+        timestamp: expect.any(String),
       });
     });
   });
