@@ -8,7 +8,7 @@ export class MongoDBRowsDatabaseWrapper implements RowDatabaseWrapper {
     taskId: string,
     page: number,
     limit: number
-  ): Promise<Row[]> {
+  ): Promise<Row[] | null> {
     const skip = (page - 1) * limit;
     return RowModel.find({ taskId }).skip(skip).limit(limit).exec();
   }

@@ -1,13 +1,8 @@
 import express from "express";
 import multer from "multer";
-import { Request, Response } from "express";
 import { UploadFileUseCase } from "../../domain/interfaces/use-cases/upload-file-use-case";
-import { TaskRepository } from "../../domain/interfaces/repositories/task-repository";
 
-export default function UploadRouter(
-  taskRepository: TaskRepository,
-  uploadFileUseCase: UploadFileUseCase
-) {
+export default function UploadRouter(uploadFileUseCase: UploadFileUseCase) {
   const router = express.Router();
 
   const upload = multer({ dest: "uploads/" }); // Configure multer for file uploads

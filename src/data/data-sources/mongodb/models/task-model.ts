@@ -8,6 +8,7 @@ const taskSchema = new Schema<Task>({
     enum: ["pending", "processing", "done", "failed"],
     default: "pending",
   },
+  hasErrors: { type: Boolean, default: false },
 });
 
 export const TaskModel = model<Task>("Task", taskSchema);
