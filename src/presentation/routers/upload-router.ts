@@ -9,7 +9,7 @@ export default function UploadRouter(uploadFileUseCase: UploadFileUseCase) {
   const upload = multer({ dest: "uploads/" }); // Configure multer for file uploads
 
   router.post(
-    "/upload",
+    "/",
     checkPermissions(["UPLOAD_FILES"]),
     upload.single("file"),
     async (req, res, next) => {
