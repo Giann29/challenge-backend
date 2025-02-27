@@ -17,8 +17,7 @@ export class RowRepositoryImpl implements RowRepository {
     taskId: string,
     page: number,
     limit: number
-  ): Promise<Row[] | null> {
-    const result = await this.rowsDataSource.findByTaskId(taskId, page, limit);
-    return result;
+  ): Promise<{ rows: Row[]; total: number }> {
+    return await this.rowsDataSource.findByTaskId(taskId, page, limit);
   }
 }

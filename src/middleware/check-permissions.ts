@@ -1,27 +1,63 @@
 import { Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
 
-export const checkPermissions = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void => {
-  // Example permission check logic
-  const userPermissions = req.user?.permissions || []; // Assuming user permissions are attached to the request
+export const checkPermissions = (requiredPermissions: string[]) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    console.log("checkPermissions middleware invoked");
+    const authHeader = req.headers["authorization"];
+    console.log("Authorization header:", authHeader);
 
-  const requiredPermissions = ["READ_TASKS", "UPLOAD_FILES"]; // Define required permissions for the endpoints
+    if (!authHeader) {
+      console.error("No token provided in header");
+      res.status(401).json({ error: "Unauthorized: No token provided" });
+      return;
+    }
 
-  const hasPermission = requiredPermissions.every((permission) =>
-    userPermissions.includes(permission)
-  );
+    const token = authHeader.split(" ")[1];
+    if (!token) {
+      console.error("Token missing after splitting Authorization header");
+      res.status(401).json({ error: "Unauthorized: No token provided" });
+      return;
+    }
 
-  if (!hasPermission) {
-    res
-      .status(403)
-      .json({
-        error: "Forbidden: You do not have permission to access this resource.",
-      });
-    return; // Ensure to return after sending the response
-  }
+    try {
+      const secretKey =
+        process.env.JWT_SECRET ||
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+      console.log("Using secretKey:", secretKey);
+      console.log("Token received:", token);
+      const decoded = jwt.verify(token, secretKey) as {
+        permissions?: string[];
+      };
+      console.log("Decoded token:", decoded);
 
-  next();
+      const userPermissions = decoded.permissions || [];
+      console.log("User permissions:", userPermissions);
+
+      const hasPermission = requiredPermissions.every((permission) =>
+        userPermissions.includes(permission)
+      );
+      console.log("Has required permission:", hasPermission);
+
+      if (!hasPermission) {
+        console.error(
+          "User does not have required permissions. Required:",
+          requiredPermissions,
+          "User:",
+          userPermissions
+        );
+        res.status(403).json({
+          error:
+            "Forbidden: You do not have permission to access this resource.",
+        });
+        return;
+      }
+
+      console.log("Permission check passed");
+      next();
+    } catch (err) {
+      console.error("Error in checkPermissions middleware:", err);
+      res.status(401).json({ error: "Unauthorized: Invalid token" });
+    }
+  };
 };

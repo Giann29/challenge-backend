@@ -128,11 +128,13 @@ async function processFile(
       throw new TaskNotFoundException(`Task with ID ${taskId} not found.`);
     }
 
-    // Update the task status
     task.status = "done";
+    task.hasErrors = errors.length > 0;
 
-    // Update the task status
-    await taskRepository.update(taskId, { status: "done" });
+    await taskRepository.update(taskId, {
+      status: "done",
+      hasErrors: errors.length > 0,
+    });
 
     console.log(`File processing completed for task ${taskId}`);
   } catch (error) {

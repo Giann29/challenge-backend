@@ -6,5 +6,5 @@ export interface RowRepository {
     taskId: string,
     page: number,
     limit: number
-  ): Promise<Row[] | null>;
+  ): Promise<{ rows: Row[]; total: number }>;
 }

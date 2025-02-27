@@ -1,38 +1,31 @@
 import express from "express";
 import request from "supertest";
-import fs from "fs/promises";
+import jwt from "jsonwebtoken";
+import path from "path";
 import UploadRouter from "./upload-router";
 import { UploadFileUseCase } from "../../domain/interfaces/use-cases/upload-file-use-case";
-import { TaskSaveException } from "../../domain/exceptions/database-exception";
-import { errorHandler } from "../../middleware/error-handler";
+import { Task } from "../../domain/entities/task";
 
-// Mocks for use case dependencies are assumed to be set up in jest.config.js or similar.
-jest.mock("../../data/messaging/rabbitmq");
-jest.mock("../../shared/utils/generateTaskId");
+const VALID_SECRET =
+  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const validToken = jwt.sign({ permissions: ["UPLOAD_FILES"] }, VALID_SECRET);
+const tokenWithoutPermissions = jwt.sign({ permissions: [] }, VALID_SECRET);
 
 describe("Upload Router", () => {
   let app: express.Application;
   let uploadFileUseCase: jest.Mocked<UploadFileUseCase>;
-  let consoleErrorSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    // Spy to suppress error logs from appearing in test output
-    consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-
     uploadFileUseCase = {
       execute: jest.fn(),
     } as unknown as jest.Mocked<UploadFileUseCase>;
 
     app = express();
-    // Middleware to simulate an authenticated user with proper permissions
-    app.use((req, res, next) => {
-      req.user = { permissions: ["READ_TASKS", "UPLOAD_FILES"] };
-      next();
-    });
     app.use(express.json());
-    // Mount the UploadRouter at root
+    // Mount the UploadRouter on the root path
     app.use("/", UploadRouter(uploadFileUseCase));
-    // Error handler to catch thrown errors
+
+    // Error-handling middleware to catch and return errors as JSON
     app.use(
       (
         err: any,
@@ -40,66 +33,28 @@ describe("Upload Router", () => {
         res: express.Response,
         next: express.NextFunction
       ) => {
-        errorHandler(err, req, res, next);
+        res.status(err.statusCode || 500).json({
+          error: err.message || "Internal server error",
+        });
       }
     );
   });
 
-  afterEach(() => {
-    consoleErrorSpy.mockRestore();
-  });
-
-  it("should upload a file and return a taskId and filePath", async () => {
-    const taskId = "12345";
-    // Simulate successful task creation
-    uploadFileUseCase.execute.mockResolvedValue({ taskId, status: "pending" });
-
+  it("should return 401 if no token is provided", async () => {
     const response = await request(app)
       .post("/upload")
-      .attach("file", "test/Mixed.xlsx");
+      .attach("file", "test/Mixed.xlsx"); // ensure this file exists for tests
 
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({
-      taskId,
-      filePath: expect.any(String),
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({
+      error: "Unauthorized: No token provided",
     });
-    expect(uploadFileUseCase.execute).toHaveBeenCalledWith(expect.any(String));
-
-    // Optionally, clean up the uploaded file if needed.
-    if (response.body.filePath) {
-      await fs.unlink(response.body.filePath);
-    }
   });
 
-  it("should return 400 if no file is uploaded", async () => {
-    const response = await request(app).post("/upload");
-
-    expect(response.status).toBe(400);
-    expect(response.body).toEqual({ error: "No file uploaded." });
-  });
-
-  it("should return 403 if permissions are missing", async () => {
-    const appNoPermissions = express();
-    // Simulate a user without required permissions
-    appNoPermissions.use((req, res, next) => {
-      req.user = { permissions: [] };
-      next();
-    });
-    appNoPermissions.use(express.json());
-    appNoPermissions.use("/", UploadRouter(uploadFileUseCase));
-    appNoPermissions.use(
-      (
-        err: any,
-        req: express.Request,
-        res: express.Response,
-        next: express.NextFunction
-      ) => {
-        errorHandler(err, req, res, next);
-      }
-    );
-
-    const response = await request(appNoPermissions)
+  it("should return 403 if token does not include required permissions", async () => {
+    const response = await request(app)
       .post("/upload")
+      .set("Authorization", `Bearer ${tokenWithoutPermissions}`)
       .attach("file", "test/Mixed.xlsx");
 
     expect(response.status).toBe(403);
@@ -108,23 +63,43 @@ describe("Upload Router", () => {
     });
   });
 
-  it("should return 500 if there is an error during file upload", async () => {
-    // Simulate failure in the upload use case
-    uploadFileUseCase.execute.mockRejectedValue(new TaskSaveException());
+  it("should return 400 if no file is uploaded", async () => {
+    const response = await request(app)
+      .post("/upload")
+      .set("Authorization", `Bearer ${validToken}`);
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: "No file uploaded.",
+    });
+  });
+
+  it("should process the file and return task info when file is uploaded successfully", async () => {
+    const fakeTask: Task = { taskId: "task123", status: "pending" };
+    uploadFileUseCase.execute.mockResolvedValue(fakeTask);
 
     const response = await request(app)
       .post("/upload")
+      .set("Authorization", `Bearer ${validToken}`)
+      .attach("file", "test/Mixed.xlsx");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      taskId: fakeTask.taskId,
+      filePath: expect.any(String),
+    });
+    expect(uploadFileUseCase.execute).toHaveBeenCalledWith(expect.any(String));
+  });
+
+  it("should handle errors thrown by uploadFileUseCase.execute", async () => {
+    uploadFileUseCase.execute.mockRejectedValue(new Error("Test error"));
+
+    const response = await request(app)
+      .post("/upload")
+      .set("Authorization", `Bearer ${validToken}`)
       .attach("file", "test/Mixed.xlsx");
 
     expect(response.status).toBe(500);
-    expect(response.body).toMatchObject({
-      status: "error",
-      code: "TASK_SAVE_ERROR",
-      message: "Failed to save the task",
-      path: "/upload",
-      timestamp: expect.any(String),
-    });
-    // Optionally, verify that the error has been reported to console.error.
-    expect(consoleErrorSpy).toHaveBeenCalled();
+    expect(response.body).toEqual({ error: "Test error" });
   });
 });

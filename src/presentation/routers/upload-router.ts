@@ -10,7 +10,7 @@ export default function UploadRouter(uploadFileUseCase: UploadFileUseCase) {
 
   router.post(
     "/upload",
-    checkPermissions,
+    checkPermissions(["UPLOAD_FILES"]),
     upload.single("file"),
     async (req, res, next) => {
       const file = req.file;

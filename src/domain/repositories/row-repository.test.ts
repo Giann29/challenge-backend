@@ -3,72 +3,64 @@ import { RowDataSource } from "../../data/data-sources/interfaces/data-sources/r
 import { Row } from "../entities/row";
 
 describe("RowRepositoryImpl", () => {
-  let rowRepository: RowRepositoryImpl;
   let rowDataSource: jest.Mocked<RowDataSource>;
+  let rowRepository: RowRepositoryImpl;
+
+  const sampleRow: Row = {
+    taskId: "task123",
+    name: "John Doe",
+    age: 30,
+    nums: [1, 2, 3],
+  };
 
   beforeEach(() => {
     rowDataSource = {
       create: jest.fn(),
       findByTaskId: jest.fn(),
-    };
+    } as unknown as jest.Mocked<RowDataSource>;
+
     rowRepository = new RowRepositoryImpl(rowDataSource);
   });
 
   describe("save", () => {
-    it("should save a row and return true", async () => {
-      const row: Row = {
-        taskId: "task1",
-        name: "John Doe",
-        age: 30,
-        nums: [1, 2, 3],
-      };
+    it("should save a row and return true if successful", async () => {
       rowDataSource.create.mockResolvedValue(true);
 
-      const result = await rowRepository.save(row);
+      const result = await rowRepository.save(sampleRow);
 
       expect(result).toBe(true);
-      expect(rowDataSource.create).toHaveBeenCalledWith(row);
+      expect(rowDataSource.create).toHaveBeenCalledWith(sampleRow);
     });
 
-    it("should return false if saving a row fails", async () => {
-      const row: Row = {
-        taskId: "task1",
-        name: "John Doe",
-        age: 30,
-        nums: [1, 2, 3],
-      };
+    it("should return false if saving the row fails", async () => {
       rowDataSource.create.mockResolvedValue(false);
 
-      const result = await rowRepository.save(row);
+      const result = await rowRepository.save(sampleRow);
 
       expect(result).toBe(false);
-      expect(rowDataSource.create).toHaveBeenCalledWith(row);
+      expect(rowDataSource.create).toHaveBeenCalledWith(sampleRow);
     });
   });
 
   describe("findByTaskId", () => {
-    it("should return rows for a given taskId", async () => {
-      const taskId = "task1";
-      const rows: Row[] = [
-        { taskId, name: "John Doe", age: 30, nums: [1, 2, 3] },
-        { taskId, name: "Jane Doe", age: 25, nums: [4, 5, 6] },
-      ];
-      rowDataSource.findByTaskId.mockResolvedValue(rows);
+    it("should return rows and total count for a given taskId", async () => {
+      const rows = [sampleRow];
+      const total = 1;
+      rowDataSource.findByTaskId.mockResolvedValue({ rows, total });
 
-      const result = await rowRepository.findByTaskId(taskId, 1, 10);
+      const result = await rowRepository.findByTaskId("task123", 1, 10);
 
-      expect(result).toEqual(rows);
-      expect(rowDataSource.findByTaskId).toHaveBeenCalledWith(taskId, 1, 10);
+      expect(result).toEqual({ rows, total });
+      expect(rowDataSource.findByTaskId).toHaveBeenCalledWith("task123", 1, 10);
     });
 
-    it("should return null if no rows are found", async () => {
-      const taskId = "task1";
-      rowDataSource.findByTaskId.mockResolvedValue(null);
+    it("should return an empty array and zero total if no rows are found", async () => {
+      rowDataSource.findByTaskId.mockResolvedValue({ rows: [], total: 0 });
 
-      const result = await rowRepository.findByTaskId(taskId, 1, 10);
+      const result = await rowRepository.findByTaskId("task123", 1, 10);
 
-      expect(result).toBeNull();
-      expect(rowDataSource.findByTaskId).toHaveBeenCalledWith(taskId, 1, 10);
+      expect(result).toEqual({ rows: [], total: 0 });
+      expect(rowDataSource.findByTaskId).toHaveBeenCalledWith("task123", 1, 10);
     });
   });
 });

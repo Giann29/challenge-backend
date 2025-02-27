@@ -51,10 +51,15 @@ async function initializeDependencies() {
 
   app.use(express.json());
 
-  app.use("/api", uploadRouter(uploadFileUseCase));
+  app.use(
+    "/api/upload",
+    uploadRouter(uploadFileUseCase),
+    checkPermissions(["UPLOAD_FILES"])
+  );
   app.use(
     "/api/tasks",
-    tasksRouter(getStatusUseCase, getTaskErrorsUseCase, getTaskDataUseCase)
+    tasksRouter(getStatusUseCase, getTaskErrorsUseCase, getTaskDataUseCase),
+    checkPermissions(["READ_TASKS"])
   );
 
   app.use("*", notFoundHandler);
@@ -69,7 +74,6 @@ async function initializeDependencies() {
       errorHandler(err, req, res, next);
     }
   );
-  app.use(checkPermissions);
 }
 
 // Start the server

@@ -26,10 +26,11 @@ export class MongoDBRowsDataSource implements RowDataSource {
     taskId: string,
     page: number,
     limit: number
-  ): Promise<Row[] | null> {
+  ): Promise<{ rows: Row[]; total: number }> {
     try {
-      const result = await this.database.findByTaskId(taskId, page, limit);
-      return result;
+      const total = await this.database.countErrorsByTaskId(taskId);
+      const rows = await this.database.findByTaskId(taskId, page, limit);
+      return { rows, total };
     } catch (err) {
       throw new QueryExecutionException(
         err as globalThis.Error,

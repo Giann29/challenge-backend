@@ -11,49 +11,61 @@ export default function TasksRouter(
 ) {
   const router = express.Router();
 
-  router.get("/status/:taskId", checkPermissions, async (req, res, next) => {
-    const { taskId } = req.params;
-    try {
-      const task = await getStatusUseCase.execute(taskId);
-      res.json({
-        taskId: task.taskId,
-        status: task.status,
-        hasErrors: task.hasErrors,
-      }); // Send the response
-    } catch (error) {
-      next(error);
+  router.get(
+    "/status/:taskId",
+    checkPermissions(["READ_TASKS"]),
+    async (req, res, next) => {
+      const { taskId } = req.params;
+      try {
+        const task = await getStatusUseCase.execute(taskId);
+        res.json({
+          taskId: task.taskId,
+          status: task.status,
+          hasErrors: task.hasErrors,
+        }); // Send the response
+      } catch (error) {
+        next(error);
+      }
     }
-  });
+  );
 
-  router.get("/data/:taskId", checkPermissions, async (req, res, next) => {
-    const { taskId } = req.params;
-    const { page = 1, limit = 10 } = req.query; // Default values for page and limit
-    try {
-      const data = await getTaskData.execute(
-        taskId,
-        Number(page),
-        Number(limit)
-      );
-      res.json(data);
-    } catch (error) {
-      next(error);
+  router.get(
+    "/data/:taskId",
+    checkPermissions(["READ_TASKS"]),
+    async (req, res, next) => {
+      const { taskId } = req.params;
+      const { page = 1, limit = 10 } = req.query; // Default values for page and limit
+      try {
+        const data = await getTaskData.execute(
+          taskId,
+          Number(page),
+          Number(limit)
+        );
+        res.json(data);
+      } catch (error) {
+        next(error);
+      }
     }
-  });
+  );
 
-  router.get("/errors/:taskId", checkPermissions, async (req, res, next) => {
-    const { taskId } = req.params;
-    const { page = 1, limit = 10 } = req.query; // Default values for page and limit
-    try {
-      const errors = await getTaskErrors.execute(
-        taskId,
-        Number(page),
-        Number(limit)
-      );
-      res.json(errors);
-    } catch (error) {
-      next(error);
+  router.get(
+    "/errors/:taskId",
+    checkPermissions(["READ_TASKS"]),
+    async (req, res, next) => {
+      const { taskId } = req.params;
+      const { page = 1, limit = 10 } = req.query; // Default values for page and limit
+      try {
+        const errors = await getTaskErrors.execute(
+          taskId,
+          Number(page),
+          Number(limit)
+        );
+        res.json(errors);
+      } catch (error) {
+        next(error);
+      }
     }
-  });
+  );
 
   return router;
 }

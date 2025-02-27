@@ -8,7 +8,7 @@ export class MongoDBRowsDatabaseWrapper implements RowDatabaseWrapper {
     taskId: string,
     page: number,
     limit: number
-  ): Promise<Row[] | null> {
+  ): Promise<Row[]> {
     try {
       const skip = (page - 1) * limit;
       return await RowModel.find({ taskId }).skip(skip).limit(limit).exec();
@@ -27,6 +27,17 @@ export class MongoDBRowsDatabaseWrapper implements RowDatabaseWrapper {
       return { insertedId: row._id };
     } catch (err) {
       throw new QueryExecutionException(err as globalThis.Error, "insertOne");
+    }
+  }
+
+  async countErrorsByTaskId(taskId: string): Promise<number> {
+    try {
+      return await RowModel.countDocuments({ taskId }).exec();
+    } catch (err) {
+      throw new QueryExecutionException(
+        err as globalThis.Error,
+        `countErrorsByTaskId: ${taskId}`
+      );
     }
   }
 }

@@ -17,6 +17,7 @@ describe("MongoDBRowsDataSource", () => {
     databaseWrapper = {
       insertOne: jest.fn(),
       findByTaskId: jest.fn(),
+      countErrorsByTaskId: jest.fn(), // Añadir esta línea para incluir el mock de countErrorsByTaskId
     } as unknown as jest.Mocked<RowDatabaseWrapper>;
 
     rowsDataSource = new MongoDBRowsDataSource(databaseWrapper);
@@ -46,12 +47,14 @@ describe("MongoDBRowsDataSource", () => {
   });
 
   describe("findByTaskId", () => {
-    it("should return an array of rows when found", async () => {
+    it("should return an object with rows and total when found", async () => {
       const rows: Row[] = [sampleRow];
+      const total = 1;
       databaseWrapper.findByTaskId.mockResolvedValue(rows);
+      databaseWrapper.countErrorsByTaskId.mockResolvedValue(total); // Simulación de respuesta exitosa para countErrorsByTaskId
 
       const result = await rowsDataSource.findByTaskId("123", 1, 10);
-      expect(result).toEqual(rows);
+      expect(result).toEqual({ rows, total });
       expect(databaseWrapper.findByTaskId).toHaveBeenCalledWith("123", 1, 10);
     });
 

@@ -1,130 +1,67 @@
-import express from "express";
-import request from "supertest";
-import fs from "fs/promises";
-import UploadRouter from "../../presentation/routers/upload-router";
-import { UploadFileUseCase } from "../../domain/interfaces/use-cases/upload-file-use-case";
-import { TaskSaveException } from "../../domain/exceptions/database-exception";
-import { errorHandler } from "../../middleware/error-handler";
+import { UploadFile } from "./upload-file";
+import { TaskRepository } from "../interfaces/repositories/task-repository";
+import { Task } from "../entities/task";
+import { enqueueTask } from "../../data/messaging/rabbitmq";
+import { generateTaskId } from "../../shared/utils/generateTaskId";
+import { TaskSaveException } from "../exceptions/database-exception";
 
-// Mocks for use case dependencies are assumed to be set up in jest.config.js or similar.
-jest.mock("../../data/messaging/rabbitmq");
-jest.mock("../../shared/utils/generateTaskId");
+// Mock external dependencies.
+jest.mock("../../data/messaging/rabbitmq", () => ({
+  enqueueTask: jest.fn(),
+}));
 
-describe("Upload Router", () => {
-  let app: express.Application;
-  let uploadFileUseCase: jest.Mocked<UploadFileUseCase>;
+jest.mock("../../shared/utils/generateTaskId", () => ({
+  generateTaskId: jest.fn(),
+}));
+
+describe("UploadFile Use Case", () => {
+  let taskRepository: jest.Mocked<TaskRepository>;
+  let uploadFile: UploadFile;
+  const fakeFilePath = "path/to/file.txt";
   let consoleErrorSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    // Spy to suppress error logs from appearing in test output
     consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    // Create a mock implementation of TaskRepository
+    taskRepository = {
+      save: jest.fn(),
+    } as unknown as jest.Mocked<TaskRepository>;
 
-    uploadFileUseCase = {
-      execute: jest.fn(),
-    } as unknown as jest.Mocked<UploadFileUseCase>;
+    // Force generateTaskId() to return a fixed taskId.
+    (generateTaskId as jest.Mock).mockReturnValue("test-task-01");
 
-    app = express();
-    // Middleware to simulate an authenticated user with proper permissions
-    app.use((req, res, next) => {
-      req.user = { permissions: ["READ_TASKS", "UPLOAD_FILES"] };
-      next();
+    // Clear any previous call history for enqueueTask.
+    (enqueueTask as jest.Mock).mockClear();
+
+    uploadFile = new UploadFile(taskRepository);
+  });
+
+  it("should create a new task, save it, enqueue the task, and return the task", async () => {
+    // Simulate a successful save.
+    taskRepository.save.mockResolvedValue(true);
+
+    const result = await uploadFile.execute(fakeFilePath);
+
+    expect(result).toEqual({ taskId: "test-task-01", status: "pending" });
+    expect(taskRepository.save).toHaveBeenCalledWith({
+      taskId: "test-task-01",
+      status: "pending",
     });
-    app.use(express.json());
-    // Mount the UploadRouter at root
-    app.use("/", UploadRouter(uploadFileUseCase));
-    // Error handler to catch thrown errors
-    app.use(
-      (
-        err: any,
-        req: express.Request,
-        res: express.Response,
-        next: express.NextFunction
-      ) => {
-        errorHandler(err, req, res, next);
-      }
+    expect(enqueueTask).toHaveBeenCalledWith("test-task-01", fakeFilePath);
+  });
+
+  it("should throw TaskSaveException if taskRepository.save returns false", async () => {
+    // Simulate a failure in saving the task.
+    taskRepository.save.mockResolvedValue(false);
+
+    await expect(uploadFile.execute(fakeFilePath)).rejects.toThrow(
+      TaskSaveException
     );
-  });
-
-  afterEach(() => {
-    consoleErrorSpy.mockRestore();
-  });
-
-  it("should upload a file and return a taskId and filePath", async () => {
-    const taskId = "12345";
-    // Simulate successful task creation
-    uploadFileUseCase.execute.mockResolvedValue({ taskId, status: "pending" });
-
-    const response = await request(app)
-      .post("/upload")
-      .attach("file", "test/Mixed.xlsx");
-
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({
-      taskId,
-      filePath: expect.any(String),
+    expect(taskRepository.save).toHaveBeenCalledWith({
+      taskId: "test-task-01",
+      status: "pending",
     });
-    expect(uploadFileUseCase.execute).toHaveBeenCalledWith(expect.any(String));
-
-    // Optionally, clean up the uploaded file if needed.
-    if (response.body.filePath) {
-      await fs.unlink(response.body.filePath);
-    }
-  });
-
-  it("should return 400 if no file is uploaded", async () => {
-    const response = await request(app).post("/upload");
-
-    expect(response.status).toBe(400);
-    expect(response.body).toEqual({ error: "No file uploaded." });
-  });
-
-  it("should return 403 if permissions are missing", async () => {
-    const appNoPermissions = express();
-    // Simulate a user without required permissions
-    appNoPermissions.use((req, res, next) => {
-      req.user = { permissions: [] };
-      next();
-    });
-    appNoPermissions.use(express.json());
-    appNoPermissions.use("/", UploadRouter(uploadFileUseCase));
-    appNoPermissions.use(
-      (
-        err: any,
-        req: express.Request,
-        res: express.Response,
-        next: express.NextFunction
-      ) => {
-        errorHandler(err, req, res, next);
-      }
-    );
-
-    const response = await request(appNoPermissions)
-      .post("/upload")
-      .attach("file", "test/Mixed.xlsx");
-
-    expect(response.status).toBe(403);
-    expect(response.body).toEqual({
-      error: "Forbidden: You do not have permission to access this resource.",
-    });
-  });
-
-  it("should return 500 if there is an error during file upload", async () => {
-    // Simulate failure in the upload use case
-    uploadFileUseCase.execute.mockRejectedValue(new TaskSaveException());
-
-    const response = await request(app)
-      .post("/upload")
-      .attach("file", "test/Mixed.xlsx");
-
-    expect(response.status).toBe(500);
-    expect(response.body).toMatchObject({
-      status: "error",
-      code: "TASK_SAVE_ERROR",
-      message: "Failed to save the task",
-      path: "/upload",
-      timestamp: expect.any(String),
-    });
-    // Optionally, verify that the error has been reported to console.error.
-    expect(consoleErrorSpy).toHaveBeenCalled();
+    // Ensure enqueueTask is not called if saving fails.
+    expect(enqueueTask).not.toHaveBeenCalled();
   });
 });
