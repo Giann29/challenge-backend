@@ -21,8 +21,9 @@ services:
     depends_on:
       - mongodb
       - rabbitmq
-    env_file:
-      - .env
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/challenge
+      - RABBITMQ_URI=amqp://rabbitmq:5672
     volumes:
       - ./uploads:/app/uploads
 
@@ -33,7 +34,8 @@ services:
     depends_on:
       - mongodb
       - rabbitmq
-    env_file:
-      - .env
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/challenge
+      - RABBITMQ_URI=amqp://rabbitmq:5672
     volumes:
       - ./uploads:/app/uploads
