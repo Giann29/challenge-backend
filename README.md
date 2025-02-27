@@ -38,6 +38,42 @@ This application utilizes messaging queues with RabbitMQ to handle asynchronous 
   - Retrieves errors associated with a specific task by its ID, with optional pagination (page and limit).
   - **Response:** JSON object with task errors.
 
+## Permissioning System
+
+The application implements a permissioning system to control access to various resources. The permissions are checked using JWT tokens, which include a list of permissions associated with the user.
+
+### Available Permissions
+
+- **READ_TASKS**: Allows the user to read task information.
+- **UPLOAD_FILES**: Allows the user to upload files.
+
+### Middleware
+
+The `checkPermissions` middleware is used to enforce permission checks on specific routes. It verifies that the user has the required permissions before allowing access to the requested resource.
+
+#### Usage Example
+
+```typescript
+import { checkPermissions } from "./middleware/check-permissions";
+
+// Protect a route with permissions
+app.use(
+  "/api/upload",
+  uploadRouter(uploadFileUseCase),
+  checkPermissions(["UPLOAD_FILES"])
+);
+```
+
+### Error Handling
+
+If a user attempts to access a resource without the necessary permissions, a 403 Forbidden response will be returned:
+
+```json
+{
+  "error": "Forbidden: You do not have permission to access this resource."
+}
+```
+
 ## Acknowledgments
 
 - [Express](https://expressjs.com/) for the web framework.
